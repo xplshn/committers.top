@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
+	"most-active-github-users-counter/github"
 	"most-active-github-users-counter/output"
 	"most-active-github-users-counter/top"
 )
@@ -41,7 +43,7 @@ func main() {
 
 	if *listPresets {
 		fmt.Println("preset,title,definition_checksum")
-		for name, _ := range PRESETS {
+		for name := range PRESETS {
 			fmt.Printf("%v,\"%v\",%v\n", name, PresetTitle(name), PresetChecksum(name))
 		}
 		return
@@ -67,7 +69,9 @@ func main() {
 		log.Fatal("Unrecognized output format: ", *outputOpt)
 	}
 
-	opts := top.Options{Token: *token, Locations: locations, ExcludeLocations: excludeLocations, Amount: *amount, ConsiderNum: *considerNum, PresetTitle: presetTitle, PresetChecksum: presetChecksum}
+	opts := top.Options{Token: *token, Locations: locations, ExcludeLocations: excludeLocations, Amount: *amount, ConsiderNum: *considerNum, PresetTitle: presetTitle, PresetChecksum: presetChecksum, Filter: func(u github.User) bool {
+		return !strings.Contains(strings.ToLower(u.Company), "github")
+	}}
 	data, err := top.GithubTop(opts)
 
 	if err != nil {

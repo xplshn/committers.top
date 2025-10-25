@@ -28,7 +28,19 @@ func GithubTop(options Options) (github.GithubSearchResults, error) {
 	if err != nil {
 		return github.GithubSearchResults{}, err
 	}
-	return users, nil
+
+	filtered := []github.User{}
+	for _, u := range users.Users {
+		if options.Filter == nil || options.Filter(u) {
+			filtered = append(filtered, u)
+		}
+	}
+
+	return github.GithubSearchResults{
+		Users:                filtered,
+		MinimumFollowerCount: github.MinFollowers(filtered),
+		TotalUserCount:       len(filtered),
+	}, nil
 }
 
 type Options struct {
@@ -39,4 +51,5 @@ type Options struct {
 	ConsiderNum      int
 	PresetTitle      string
 	PresetChecksum   string
+	Filter           func(github.User) bool
 }

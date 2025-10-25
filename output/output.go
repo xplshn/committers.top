@@ -53,20 +53,43 @@ func CsvOutput(results github.GithubSearchResults, writer io.Writer, options top
 
 type ContributionsSelector func(github.User) int
 
-func selectCommits(user github.User) int {
-	return user.CommitsCount
-}
+type Filter func(github.User) bool
 
-func selectContributions(user github.User) int {
-	return user.ContributionCount
-}
-
-func selectPublicContributions(user github.User) int {
-	return user.PublicContributionCount
+func (users GithubUserList) TopBy(selector func(github.User) int, userFilter Filter, amount int) GithubUserList {
+	cloned := clone(users)
+	if userFilter != nil {
+		var filtered []github.User
+		for _, u := range cloned {
+			if userFilter(u) {
+				filtered = append(filtered, u)
+			}
+		}
+		cloned = filtered
+	}
+	sort.Slice(cloned, func(i, j int) bool {
+		return selector(cloned[i]) > selector(cloned[j])
+	})
+	return trim(cloned, amount)
 }
 
 func YamlOutput(results github.GithubSearchResults, writer io.Writer, options top.Options) error {
 	users := GithubUserList(results.Users)
+
+	outputOrganizations := func(orgs Organizations) {
+		for i, org := range orgs {
+			fmt.Fprintf(
+				writer,
+				`
+  - rank: %+v
+    name: %+v
+    membercount: %+v
+`,
+				i+1,
+				strconv.QuoteToASCII(org.Name),
+				org.MemberCount)
+		}
+	}
+
 	outputUsers := func(user []github.User, cs ContributionsSelector) {
 		for i, u := range user {
 			contributionCount := cs(u)
@@ -91,39 +114,24 @@ func YamlOutput(results github.GithubSearchResults, writer io.Writer, options to
 		}
 	}
 
-	topPublic := users.TopCommits(options.Amount)
+	topCommits := users.TopBy(func(u github.User) int { return u.CommitsCount }, nil, options.Amount)
 	fmt.Fprintln(writer, "users:")
-	outputUsers(topPublic, selectCommits)
+	outputUsers(topCommits, func(u github.User) int { return u.CommitsCount })
 
-	topContributions := users.TopPublic(options.Amount)
+	topPublic := users.TopBy(func(u github.User) int { return u.PublicContributionCount }, nil, options.Amount)
 	fmt.Fprintln(writer, "users_public_contributions:")
-	outputUsers(topContributions, selectPublicContributions)
+	outputUsers(topPublic, func(u github.User) int { return u.PublicContributionCount })
 
-	topPrivate := users.TopPrivate(options.Amount)
+	topTotal := users.TopBy(func(u github.User) int { return u.ContributionCount }, nil, options.Amount)
 	fmt.Fprintln(writer, "\nprivate_users:")
-	outputUsers(topPrivate, selectContributions)
-
-	outputOrganizations := func(orgs Organizations) {
-		for i, org := range orgs {
-			fmt.Fprintf(
-				writer,
-				`
-  - rank: %+v
-    name: %+v
-    membercount: %+v
-`,
-				i+1,
-				strconv.QuoteToASCII(org.Name),
-				org.MemberCount)
-		}
-	}
+	outputUsers(topTotal, func(u github.User) int { return u.ContributionCount })
 
 	fmt.Fprintln(writer, "\norganizations:")
-	outputOrganizations(topPublic.TopOrgs(10))
+	outputOrganizations(topCommits.TopOrgs(10))
 	fmt.Fprintln(writer, "\npublic_contributions_organizations:")
-	outputOrganizations(topContributions.TopOrgs(10))
+	outputOrganizations(topPublic.TopOrgs(10))
 	fmt.Fprintln(writer, "\nprivate_organizations:")
-	outputOrganizations(topPrivate.TopOrgs(10))
+	outputOrganizations(topTotal.TopOrgs(10))
 
 	fmt.Fprintf(writer, "generated: %+v\n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(writer, "min_followers_required: %+v\n", results.MinimumFollowerCount)
@@ -157,24 +165,6 @@ func clone(users GithubUserList) GithubUserList {
 
 type GithubUserList []github.User
 
-func (users GithubUserList) TopCommits(amount int) GithubUserList {
-	u := TopCommitsUsers(clone(users))
-	sort.Sort(u)
-	return trim(GithubUserList(u), amount)
-}
-
-func (users GithubUserList) TopPublic(amount int) GithubUserList {
-	u := TopPublicUsers(clone(users))
-	sort.Sort(u)
-	return trim(GithubUserList(u), amount)
-}
-
-func (users GithubUserList) TopPrivate(amount int) GithubUserList {
-	u := TopPrivateUsers(clone(users))
-	sort.Sort(u)
-	return trim(GithubUserList(u), amount)
-}
-
 func (slice GithubUserList) MinFollowers() int {
 	if len(slice) == 0 {
 		return 0
@@ -186,48 +176,6 @@ func (slice GithubUserList) MinFollowers() int {
 		}
 	}
 	return followers
-}
-
-type TopCommitsUsers GithubUserList
-
-func (slice TopCommitsUsers) Len() int {
-	return len(slice)
-}
-
-func (slice TopCommitsUsers) Less(i, j int) bool {
-	return slice[i].CommitsCount > slice[j].CommitsCount
-}
-
-func (slice TopCommitsUsers) Swap(i, j int) {
-	slice[i], slice[j] = slice[j], slice[i]
-}
-
-type TopPublicUsers GithubUserList
-
-func (slice TopPublicUsers) Len() int {
-	return len(slice)
-}
-
-func (slice TopPublicUsers) Less(i, j int) bool {
-	return slice[i].PublicContributionCount > slice[j].PublicContributionCount
-}
-
-func (slice TopPublicUsers) Swap(i, j int) {
-	slice[i], slice[j] = slice[j], slice[i]
-}
-
-type TopPrivateUsers GithubUserList
-
-func (slice TopPrivateUsers) Len() int {
-	return len(slice)
-}
-
-func (slice TopPrivateUsers) Less(i, j int) bool {
-	return slice[i].ContributionCount > slice[j].ContributionCount
-}
-
-func (slice TopPrivateUsers) Swap(i, j int) {
-	slice[i], slice[j] = slice[j], slice[i]
 }
 
 type Organization struct {

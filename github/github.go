@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -200,8 +201,9 @@ Pages:
 
 				followerCount := int(userNode["followers"].(map[string]interface{})["totalCount"].(float64))
 				contributionsCollection := userNode["contributionsCollection"].(map[string]interface{})
-				contributionCount := int(contributionsCollection["contributionCalendar"].(map[string]interface{})["totalContributions"].(float64))
+				totalContributionCount := int(contributionsCollection["contributionCalendar"].(map[string]interface{})["totalContributions"].(float64))
 				privateContributionCount := int(contributionsCollection["restrictedContributionsCount"].(float64))
+				publicContributionCount := totalContributionCount - privateContributionCount
 				commitsCount := int(contributionsCollection["totalCommitContributions"].(float64))
 				pullRequestsCount := int(contributionsCollection["totalPullRequestContributions"].(float64))
 
@@ -212,8 +214,8 @@ Pages:
 					Company:                  company,
 					Organizations:            organizations,
 					FollowerCount:            followerCount,
-					ContributionCount:        contributionCount,
-					PublicContributionCount:  (contributionCount - privateContributionCount),
+					ContributionCount:        totalContributionCount,
+					PublicContributionCount:  publicContributionCount,
 					PrivateContributionCount: privateContributionCount,
 					CommitsCount:             commitsCount,
 					PullRequestsCount:        pullRequestsCount}
@@ -233,6 +235,19 @@ Pages:
 		Users:                users,
 		MinimumFollowerCount: minFollowerCount,
 		TotalUserCount:       totalUsersCount}, nil
+}
+
+func MinFollowers(users []User) int {
+	if len(users) == 0 {
+		return 0
+	}
+	min := math.MaxInt32
+	for _, user := range users {
+		if user.FollowerCount < min {
+			min = user.FollowerCount
+		}
+	}
+	return min
 }
 
 func strPropOrEmpty(obj map[string]interface{}, prop string) string {
